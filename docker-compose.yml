@@ -1,0 +1,43 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  Stream Overlay – Docker Compose
+#
+#  Schnellstart:
+#    1. cp .env.local.example .env.local  →  Werte ausfüllen
+#    2. docker compose up --build
+#    3. http://localhost:3000/setup  →  Twitch-Login
+#
+#  ⚠  NEXT_PUBLIC_* Variablen werden beim BUILD eingebacken.
+#     Nach Änderungen: docker compose build --no-cache && docker compose up
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+  stream-overlay:
+    build:
+      context: .
+      # NEXT_PUBLIC_* Variablen aus .env.local als Build-Args weitergeben
+      args:
+        NEXT_PUBLIC_CHANNEL_NAME: ${NEXT_PUBLIC_CHANNEL_NAME}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        NEXT_PUBLIC_STREAMERBOT_HOST: ${NEXT_PUBLIC_STREAMERBOT_HOST:-host.docker.internal}
+        NEXT_PUBLIC_STREAMERBOT_PORT: ${NEXT_PUBLIC_STREAMERBOT_PORT:-8080}
+
+    ports:
+      - '3000:3000'
+
+    # Server-seitige Secrets zur Laufzeit (nicht eingebacken)
+    env_file:
+      - .env.local
+
+    volumes:
+      # Token & Stream-State persistieren (Neustart überlebt)
+      - overlay-data:/app/data
+
+    restart: unless-stopped
+
+    # Auf Linux: StreamerBot auf dem Host via Sonderadresse erreichbar machen
+    # Auf Windows/Mac Docker Desktop: nicht nötig (host.docker.internal funktioniert automatisch)
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+volumes:
+  overlay-data:

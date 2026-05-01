@@ -1,0 +1,22 @@
+# Abhängigkeiten – werden im Container neu installiert
+node_modules
+
+# Build-Artefakte
+.next
+
+# Laufzeit-Daten (werden als Volume gemountet)
+data
+
+# Lokale Umgebungsdatei (Secrets – nie in das Image!)
+.env.local
+.env*.local
+
+# Entwicklungs-Tools
+.git
+.gitignore
+.claude
+
+# Docs / unwichtige Dateien
+README.md
+CONTRIBUTING.md
+*.md
