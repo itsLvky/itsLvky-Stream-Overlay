@@ -13,6 +13,10 @@ export async function POST(req: NextRequest) {
     ...(body.gameName !== undefined && { gameName: body.gameName }),
     ...(body.streamStartedAt !== undefined && { streamStartedAt: body.streamStartedAt }),
     ...(body.viewerCount !== undefined && { viewerCount: body.viewerCount }),
+    ...(body.lastFollower !== undefined && { lastFollower: body.lastFollower }),
+    ...(body.lastSubscriber !== undefined && { lastSubscriber: body.lastSubscriber }),
+    ...(body.lastBits !== undefined && { lastBits: body.lastBits }),
+    ...(body.lastDonation !== undefined && { lastDonation: body.lastDonation }),
   })
   return NextResponse.json(updated)
 }

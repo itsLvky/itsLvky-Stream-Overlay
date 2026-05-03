@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { StreamerbotProvider, useStreamerbot } from '@/app/components/overlay/StreamerbotContext'
 import TopBar from '@/app/components/overlay/TopBar'
+import EventBar from '@/app/components/overlay/EventBar'
 import ChatPanel from '@/app/components/overlay/ChatPanel'
 
 const CHANNEL_NAME = process.env.NEXT_PUBLIC_CHANNEL_NAME ?? ''
@@ -79,6 +80,7 @@ function Content() {
   return (
     <div className="screen-dotgrid fixed inset-0 flex flex-col" style={{ background: '#060608' }}>
       <TopBar />
+      <EventBar />
 
       {/* ── Two-column layout ── */}
       <div className="flex flex-1 gap-5 overflow-hidden p-5">
