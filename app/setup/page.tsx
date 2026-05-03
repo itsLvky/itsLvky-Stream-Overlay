@@ -214,6 +214,11 @@ export default async function SetupPage({
             },
             { href: '/overlay/topbar-only', label: 'TopBar Only', desc: 'Für Ingame / Desktop' },
             {
+              href: '/overlay/ultrawide',
+              label: 'Ultrawide (21:9)',
+              desc: '21:9 Monitor auf 16:9 Leinwand',
+            },
+            {
               href: '/overlay/stream-starting',
               label: 'Stream Starting',
               desc: 'Boot-Screen vor dem Stream',
