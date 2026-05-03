@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { StreamerbotClient } from '@streamerbot/client'
+import type { LastBitsEvent, LastDonationEvent } from '@/lib/server-state'
 
 // ── Shapes matching @streamerbot/client TwitchEmote / TwitchBadge ────────────
 export interface ChatEmote {
@@ -40,6 +41,10 @@ interface StreamerbotState {
   viewerCount: number | null
   streamStartedAt: string | null
   gameName: string | null
+  lastFollower: string | null
+  lastSubscriber: string | null
+  lastBits: LastBitsEvent | null
+  lastDonation: LastDonationEvent | null
 }
 
 const StreamerbotContext = createContext<StreamerbotState>({
@@ -49,6 +54,10 @@ const StreamerbotContext = createContext<StreamerbotState>({
   viewerCount: null,
   streamStartedAt: null,
   gameName: null,
+  lastFollower: null,
+  lastSubscriber: null,
+  lastBits: null,
+  lastDonation: null,
 })
 
 export function useStreamerbot() {
@@ -73,6 +82,10 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
   const [viewerCount, setViewerCount] = useState<number | null>(null)
   const [streamStartedAt, setStreamStartedAt] = useState<string | null>(null)
   const [gameName, setGameName] = useState<string | null>(null)
+  const [lastFollower, setLastFollower] = useState<string | null>(null)
+  const [lastSubscriber, setLastSubscriber] = useState<string | null>(null)
+  const [lastBits, setLastBits] = useState<LastBitsEvent | null>(null)
+  const [lastDonation, setLastDonation] = useState<LastDonationEvent | null>(null)
 
   useEffect(() => {
     let destroyed = false
@@ -104,6 +117,10 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
               if (!destroyed && state.streamStartedAt) setStreamStartedAt(state.streamStartedAt)
               if (!destroyed && state.viewerCount != null) setViewerCount(state.viewerCount)
               if (!destroyed && state.gameName) setGameName(state.gameName)
+              if (!destroyed && state.lastFollower) setLastFollower(state.lastFollower)
+              if (!destroyed && state.lastSubscriber) setLastSubscriber(state.lastSubscriber)
+              if (!destroyed && state.lastBits) setLastBits(state.lastBits)
+              if (!destroyed && state.lastDonation) setLastDonation(state.lastDonation)
             }
           } catch {
             /* no persisted state — fine */
@@ -245,6 +262,90 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         }
       })
 
+      // ── New follower ─────────────────────────────────────────────────────
+      await client.on('Twitch.Follow', (data) => {
+        if (destroyed) return
+        const username = data.data.user_name || data.data.user_login
+        if (!username) return
+        setLastFollower(username)
+        fetch('/api/stream-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastFollower: username }),
+        }).catch(() => {})
+      })
+
+      // ── New sub / resub / gift sub ───────────────────────────────────────
+      await client.on('Twitch.Sub', (data) => {
+        if (destroyed) return
+        const username = data.data.displayName || data.data.userName
+        if (!username) return
+        setLastSubscriber(username)
+        fetch('/api/stream-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastSubscriber: username }),
+        }).catch(() => {})
+      })
+
+      await client.on('Twitch.ReSub', (data) => {
+        if (destroyed) return
+        const username = data.data.displayName || data.data.userName
+        if (!username) return
+        setLastSubscriber(username)
+        fetch('/api/stream-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastSubscriber: username }),
+        }).catch(() => {})
+      })
+
+      await client.on('Twitch.GiftSub', (data) => {
+        if (destroyed) return
+        const username = data.data.displayName || data.data.userName
+        if (!username) return
+        setLastSubscriber(username)
+        fetch('/api/stream-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastSubscriber: username }),
+        }).catch(() => {})
+      })
+
+      // ── Bits / Cheer ─────────────────────────────────────────────────────
+      await client.on('Twitch.Cheer', (data) => {
+        if (destroyed) return
+        const username = data.data.isAnonymous
+          ? 'anonymous'
+          : data.data.displayName || data.data.username
+        const amount = data.data.bits
+        if (!username || !amount) return
+        const event: LastBitsEvent = { username, amount }
+        setLastBits(event)
+        fetch('/api/stream-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastBits: event }),
+        }).catch(() => {})
+      })
+
+      // ── Ko-fi donation (via StreamerBot Ko-fi integration) ───────────────
+      await client.on('Kofi.Donation', (data: any) => {
+        if (destroyed) return
+        const d = data?.data ?? data
+        const username = d?.from_name
+        const amount = d?.amount
+        const currency = d?.currency ?? 'EUR'
+        if (!username || !amount) return
+        const event: LastDonationEvent = { username, amount: String(amount), currency }
+        setLastDonation(event)
+        fetch('/api/stream-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastDonation: event }),
+        }).catch(() => {})
+      })
+
       await client.connect()
     }
 
@@ -260,7 +361,18 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
 
   return (
     <StreamerbotContext.Provider
-      value={{ connected, messages, broadcasterName, viewerCount, streamStartedAt, gameName }}
+      value={{
+        connected,
+        messages,
+        broadcasterName,
+        viewerCount,
+        streamStartedAt,
+        gameName,
+        lastFollower,
+        lastSubscriber,
+        lastBits,
+        lastDonation,
+      }}
     >
       {children}
     </StreamerbotContext.Provider>
