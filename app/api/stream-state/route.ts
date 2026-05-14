@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
     ...(body.lastSubscriber !== undefined && { lastSubscriber: body.lastSubscriber }),
     ...(body.lastBits !== undefined && { lastBits: body.lastBits }),
     ...(body.lastDonation !== undefined && { lastDonation: body.lastDonation }),
+    ...(body.lastRedemption !== undefined && { lastRedemption: body.lastRedemption }),
   })
   return NextResponse.json(updated)
 }

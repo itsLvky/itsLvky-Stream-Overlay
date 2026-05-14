@@ -94,6 +94,22 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
     let destroyed = false
     const holder: { client: StreamerbotClient | null } = { client: null }
 
+    // Load persisted state immediately on mount — no Streamerbot connection needed
+    fetch('/api/stream-state')
+      .then((r) => r.json())
+      .then((state) => {
+        if (destroyed) return
+        if (state.streamStartedAt) setStreamStartedAt(state.streamStartedAt)
+        if (state.viewerCount != null) setViewerCount(state.viewerCount)
+        if (state.gameName) setGameName(state.gameName)
+        if (state.lastFollower) setLastFollower(state.lastFollower)
+        if (state.lastSubscriber) setLastSubscriber(state.lastSubscriber)
+        if (state.lastBits) setLastBits(state.lastBits)
+        if (state.lastDonation) setLastDonation(state.lastDonation)
+        if (state.lastRedemption) setLastRedemption(state.lastRedemption)
+      })
+      .catch(() => {})
+
     async function setup() {
       const client = new StreamerbotClient({
         host: WS_HOST,
@@ -110,24 +126,6 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
             }
           } catch {
             /* StreamerBot not configured for Twitch — ignore */
-          }
-
-          // Restore persisted state immediately (survives scene reloads)
-          try {
-            const res = await fetch('/api/stream-state')
-            if (res.ok) {
-              const state = await res.json()
-              if (!destroyed && state.streamStartedAt) setStreamStartedAt(state.streamStartedAt)
-              if (!destroyed && state.viewerCount != null) setViewerCount(state.viewerCount)
-              if (!destroyed && state.gameName) setGameName(state.gameName)
-              if (!destroyed && state.lastFollower) setLastFollower(state.lastFollower)
-              if (!destroyed && state.lastSubscriber) setLastSubscriber(state.lastSubscriber)
-              if (!destroyed && state.lastBits) setLastBits(state.lastBits)
-              if (!destroyed && state.lastDonation) setLastDonation(state.lastDonation)
-              if (!destroyed && state.lastRedemption) setLastRedemption(state.lastRedemption)
-            }
-          } catch {
-            /* no persisted state — fine */
           }
 
           // Refresh from live Twitch API (overwrites persisted state with current values)
