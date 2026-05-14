@@ -85,10 +85,22 @@ function LiveDot({ on }: { on: boolean }) {
   )
 }
 
+function useShowDauerwerbesendung(): boolean {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d) => setShow(Boolean(d.showDauerwerbesendung)))
+      .catch(() => {})
+  }, [])
+  return show
+}
+
 export default function TopBar() {
   const { connected, broadcasterName, viewerCount, streamStartedAt, gameName } = useStreamerbot()
   const now = useClock()
   const uptime = useUptime(streamStartedAt)
+  const showDauerwerbesendung = useShowDauerwerbesendung()
 
   const timeStr = now
     ? `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
@@ -119,6 +131,14 @@ export default function TopBar() {
             {connected ? 'LIVE' : 'OFFLINE'}
           </span>
         </Module>
+
+        {showDauerwerbesendung && (
+          <Module>
+            <span className="text-sm font-bold tracking-wide" style={{ color: '#bf7fff' }}>
+              Dauerwerbesendung
+            </span>
+          </Module>
+        )}
 
         <Module>
           <span className="text-sm" style={{ color: '#cccccc' }}>

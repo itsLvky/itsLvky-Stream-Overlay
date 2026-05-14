@@ -1,4 +1,5 @@
-import { readAuth } from '@/lib/server-state'
+import { readAuth, readSettings } from '@/lib/server-state'
+import DauerwerbesendungToggle from './DauerwerbesendungToggle'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
@@ -30,6 +31,7 @@ export default async function SetupPage({
 }) {
   const params = await searchParams
   const { authenticated, channel, error, success, login } = getAuthState(params)
+  const { showDauerwerbesendung } = readSettings()
 
   return (
     <div
@@ -199,6 +201,14 @@ export default async function SetupPage({
               <span>Auf „Mit Twitch verbinden" klicken — fertig.</span>
             </div>
           </div>
+        </div>
+
+        {/* TopBar settings */}
+        <div className="flex flex-col gap-3">
+          <p className="text-xs font-semibold tracking-wider uppercase" style={{ color: '#555' }}>
+            TopBar
+          </p>
+          <DauerwerbesendungToggle initialValue={showDauerwerbesendung} />
         </div>
 
         {/* Overlay links */}

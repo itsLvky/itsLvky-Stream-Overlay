@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { StreamerbotClient } from '@streamerbot/client'
-import type { LastBitsEvent, LastDonationEvent } from '@/lib/server-state'
+import type { LastBitsEvent, LastDonationEvent, LastRedemptionEvent } from '@/lib/server-state'
 
 // ── Shapes matching @streamerbot/client TwitchEmote / TwitchBadge ────────────
 export interface ChatEmote {
@@ -45,6 +45,7 @@ interface StreamerbotState {
   lastSubscriber: string | null
   lastBits: LastBitsEvent | null
   lastDonation: LastDonationEvent | null
+  lastRedemption: LastRedemptionEvent | null
 }
 
 const StreamerbotContext = createContext<StreamerbotState>({
@@ -58,6 +59,7 @@ const StreamerbotContext = createContext<StreamerbotState>({
   lastSubscriber: null,
   lastBits: null,
   lastDonation: null,
+  lastRedemption: null,
 })
 
 export function useStreamerbot() {
@@ -86,6 +88,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
   const [lastSubscriber, setLastSubscriber] = useState<string | null>(null)
   const [lastBits, setLastBits] = useState<LastBitsEvent | null>(null)
   const [lastDonation, setLastDonation] = useState<LastDonationEvent | null>(null)
+  const [lastRedemption, setLastRedemption] = useState<LastRedemptionEvent | null>(null)
 
   useEffect(() => {
     let destroyed = false
@@ -121,6 +124,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
               if (!destroyed && state.lastSubscriber) setLastSubscriber(state.lastSubscriber)
               if (!destroyed && state.lastBits) setLastBits(state.lastBits)
               if (!destroyed && state.lastDonation) setLastDonation(state.lastDonation)
+              if (!destroyed && state.lastRedemption) setLastRedemption(state.lastRedemption)
             }
           } catch {
             /* no persisted state — fine */
@@ -346,6 +350,22 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         }).catch(() => {})
       })
 
+      // ── Channel Points Redemption ────────────────────────────────────────
+      await client.on('Twitch.RewardRedemption', (data) => {
+        if (destroyed) return
+        const d = data.data
+        const username = d.user_name || d.user_login
+        const title = d.reward.title
+        if (!username || !title) return
+        const event: LastRedemptionEvent = { username, title }
+        setLastRedemption(event)
+        fetch('/api/stream-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastRedemption: event }),
+        }).catch(() => {})
+      })
+
       await client.connect()
     }
 
@@ -372,6 +392,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         lastSubscriber,
         lastBits,
         lastDonation,
+        lastRedemption,
       }}
     >
       {children}

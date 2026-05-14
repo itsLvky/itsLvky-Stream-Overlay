@@ -9,10 +9,33 @@ const DB_FILE = path.join(DATA_DIR, 'overlay.db')
 declare global {
   // eslint-disable-next-line no-var
   var __overlayDb: Database.Database | undefined
+  // eslint-disable-next-line no-var
+  var __overlayDbMigrated: boolean | undefined
+}
+
+// Columns added after the initial schema — applied once per process.
+const COLUMN_MIGRATIONS = [
+  `ALTER TABLE stream_state ADD COLUMN last_redemption_username TEXT`,
+  `ALTER TABLE stream_state ADD COLUMN last_redemption_title TEXT`,
+]
+
+function applyColumnMigrations(conn: Database.Database) {
+  if (global.__overlayDbMigrated) return
+  for (const sql of COLUMN_MIGRATIONS) {
+    try {
+      conn.exec(sql)
+    } catch {
+      /* column already exists */
+    }
+  }
+  global.__overlayDbMigrated = true
 }
 
 function db(): Database.Database {
-  if (global.__overlayDb) return global.__overlayDb
+  if (global.__overlayDb) {
+    applyColumnMigrations(global.__overlayDb)
+    return global.__overlayDb
+  }
 
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
@@ -40,12 +63,22 @@ function db(): Database.Database {
       last_bits_amount        INTEGER,
       last_donation_username  TEXT,
       last_donation_amount    TEXT,
-      last_donation_currency  TEXT
+      last_donation_currency  TEXT,
+      last_redemption_username TEXT,
+      last_redemption_title   TEXT
     );
 
     INSERT OR IGNORE INTO stream_state (id) VALUES (1);
+
+    CREATE TABLE IF NOT EXISTS settings (
+      id                      INTEGER PRIMARY KEY CHECK (id = 1),
+      show_dauerwerbesendung  INTEGER NOT NULL DEFAULT 0
+    );
+
+    INSERT OR IGNORE INTO settings (id) VALUES (1);
   `)
 
+  applyColumnMigrations(conn)
   global.__overlayDb = conn
   migrateJsonFiles(conn)
   return conn
@@ -152,6 +185,11 @@ export interface LastDonationEvent {
   currency: string
 }
 
+export interface LastRedemptionEvent {
+  username: string
+  title: string
+}
+
 export interface StreamState {
   gameName: string | null
   streamStartedAt: string | null
@@ -160,6 +198,7 @@ export interface StreamState {
   lastSubscriber: string | null
   lastBits: LastBitsEvent | null
   lastDonation: LastDonationEvent | null
+  lastRedemption: LastRedemptionEvent | null
 }
 
 type StateRow = {
@@ -173,6 +212,8 @@ type StateRow = {
   last_donation_username: string | null
   last_donation_amount: string | null
   last_donation_currency: string | null
+  last_redemption_username: string | null
+  last_redemption_title: string | null
 }
 
 function rowToState(row: StateRow): StreamState {
@@ -196,6 +237,10 @@ function rowToState(row: StateRow): StreamState {
             currency: row.last_donation_currency,
           }
         : null,
+    lastRedemption:
+      row.last_redemption_username != null && row.last_redemption_title != null
+        ? { username: row.last_redemption_username, title: row.last_redemption_title }
+        : null,
   }
 }
 
@@ -205,7 +250,8 @@ export function getStreamState(): StreamState {
       `SELECT game_name, stream_started_at, viewer_count,
               last_follower, last_subscriber,
               last_bits_username, last_bits_amount,
-              last_donation_username, last_donation_amount, last_donation_currency
+              last_donation_username, last_donation_amount, last_donation_currency,
+              last_redemption_username, last_redemption_title
        FROM stream_state WHERE id = 1`
     )
     .get() as StateRow | undefined
@@ -219,6 +265,7 @@ export function getStreamState(): StreamState {
       lastSubscriber: null,
       lastBits: null,
       lastDonation: null,
+      lastRedemption: null,
     }
   }
   return rowToState(row)
@@ -260,6 +307,10 @@ export function updateStreamState(patch: Partial<StreamState>): StreamState {
       patch.lastDonation?.currency ?? null
     )
   }
+  if (patch.lastRedemption !== undefined) {
+    sets.push('last_redemption_username = ?, last_redemption_title = ?')
+    values.push(patch.lastRedemption?.username ?? null, patch.lastRedemption?.title ?? null)
+  }
 
   if (sets.length > 0) {
     db()
@@ -268,4 +319,28 @@ export function updateStreamState(patch: Partial<StreamState>): StreamState {
   }
 
   return getStreamState()
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export interface Settings {
+  showDauerwerbesendung: boolean
+}
+
+export function readSettings(): Settings {
+  const row = db().prepare('SELECT show_dauerwerbesendung FROM settings WHERE id = 1').get() as
+    | { show_dauerwerbesendung: number }
+    | undefined
+  return {
+    showDauerwerbesendung: row ? row.show_dauerwerbesendung === 1 : false,
+  }
+}
+
+export function updateSettings(patch: Partial<Settings>): Settings {
+  if (patch.showDauerwerbesendung !== undefined) {
+    db()
+      .prepare('UPDATE settings SET show_dauerwerbesendung = ? WHERE id = 1')
+      .run(patch.showDauerwerbesendung ? 1 : 0)
+  }
+  return readSettings()
 }

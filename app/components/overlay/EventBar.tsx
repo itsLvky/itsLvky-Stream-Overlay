@@ -17,7 +17,7 @@ function EventModule({ children }: { children: React.ReactNode }) {
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <span className="shrink-0 font-mono text-xs font-medium" style={{ color: '#bf7fff' }}>
+    <span className="shrink-0 font-mono text-sm font-medium" style={{ color: '#bf7fff' }}>
       {children}
     </span>
   )
@@ -25,7 +25,7 @@ function Label({ children }: { children: React.ReactNode }) {
 
 function Value({ children }: { children: React.ReactNode }) {
   return (
-    <span className="truncate font-mono text-xs font-semibold" style={{ color: '#ffffff' }}>
+    <span className="truncate font-mono text-sm font-semibold" style={{ color: '#ffffff' }}>
       {children}
     </span>
   )
@@ -33,7 +33,7 @@ function Value({ children }: { children: React.ReactNode }) {
 
 function Placeholder() {
   return (
-    <span className="font-mono text-xs" style={{ color: '#444' }}>
+    <span className="font-mono text-sm" style={{ color: '#444' }}>
       —
     </span>
   )
@@ -44,8 +44,8 @@ function Placeholder() {
 function FollowIcon() {
   return (
     <svg
-      width="11"
-      height="11"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -66,8 +66,8 @@ function FollowIcon() {
 function SubIcon() {
   return (
     <svg
-      width="11"
-      height="11"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -85,8 +85,8 @@ function SubIcon() {
 function BitsIcon() {
   return (
     <svg
-      width="11"
-      height="11"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="currentColor"
       className="shrink-0"
@@ -100,8 +100,8 @@ function BitsIcon() {
 function DonationIcon() {
   return (
     <svg
-      width="11"
-      height="11"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -119,14 +119,34 @@ function DonationIcon() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+function RedemptionIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+      style={{ color: '#bf7fff' }}
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  )
+}
+
 export default function EventBar() {
-  const { lastFollower, lastSubscriber, lastBits, lastDonation } = useStreamerbot()
+  const { lastFollower, lastSubscriber, lastBits, lastDonation, lastRedemption } = useStreamerbot()
 
   return (
     <div
       className="flex shrink-0 items-stretch"
       style={{
-        height: '34px',
+        height: '48px',
         background: 'rgba(6, 6, 12, 0.88)',
         borderBottom: '1px solid rgba(145, 70, 255, 0.28)',
         backdropFilter: 'blur(12px)',
@@ -158,7 +178,7 @@ export default function EventBar() {
         )}
       </EventModule>
 
-      <div className="flex min-w-0 flex-1 items-center gap-2 px-4">
+      <EventModule>
         <DonationIcon />
         <Label>Donation</Label>
         {lastDonation ? (
@@ -167,6 +187,19 @@ export default function EventBar() {
             <span style={{ color: '#aaaaaa' }}>
               ({lastDonation.amount} {lastDonation.currency})
             </span>
+          </Value>
+        ) : (
+          <Placeholder />
+        )}
+      </EventModule>
+
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-4">
+        <RedemptionIcon />
+        <Label>Reward</Label>
+        {lastRedemption ? (
+          <Value>
+            {lastRedemption.username}{' '}
+            <span style={{ color: '#aaaaaa' }}>({lastRedemption.title})</span>
           </Value>
         ) : (
           <Placeholder />
