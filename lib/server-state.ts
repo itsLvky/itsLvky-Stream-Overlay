@@ -17,6 +17,11 @@ declare global {
 const COLUMN_MIGRATIONS = [
   `ALTER TABLE stream_state ADD COLUMN last_redemption_username TEXT`,
   `ALTER TABLE stream_state ADD COLUMN last_redemption_title TEXT`,
+  `ALTER TABLE settings ADD COLUMN banner_enabled INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE settings ADD COLUMN banner_items TEXT NOT NULL DEFAULT '[]'`,
+  `ALTER TABLE settings ADD COLUMN banner_interval INTEGER NOT NULL DEFAULT 30`,
+  `ALTER TABLE settings ADD COLUMN banner_duration INTEGER NOT NULL DEFAULT 8`,
+  `ALTER TABLE settings ADD COLUMN banner_position TEXT NOT NULL DEFAULT 'middle'`,
 ]
 
 function applyColumnMigrations(conn: Database.Database) {
@@ -323,24 +328,103 @@ export function updateStreamState(patch: Partial<StreamState>): StreamState {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+export interface BannerItem {
+  text: string
+  subtitle: string // optional secondary line shown below text
+  icon: string // platform key ('twitch','discord','x','instagram','tiktok','youtube','kick') or emoji
+  color: string // hex/css accent color
+}
+
 export interface Settings {
   showDauerwerbesendung: boolean
+  bannerEnabled: boolean
+  bannerItems: BannerItem[]
+  bannerInterval: number
+  bannerDuration: number
+  bannerPosition: 'top' | 'middle' | 'bottom'
+}
+
+type SettingsRow = {
+  show_dauerwerbesendung: number
+  banner_enabled: number | null
+  banner_items: string | null
+  banner_interval: number | null
+  banner_duration: number | null
+  banner_position: string | null
+}
+
+function parseBannerItems(raw: string | null): BannerItem[] {
+  try {
+    const parsed = JSON.parse(raw ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item): BannerItem => {
+        if (typeof item === 'string')
+          return { text: item, subtitle: '', icon: '', color: '#9146FF' }
+        return {
+          text: String(item.text ?? ''),
+          subtitle: String(item.subtitle ?? ''),
+          icon: String(item.icon ?? ''),
+          color: String(item.color ?? '#9146FF'),
+        }
+      })
+      .filter((item) => item.text.trim().length > 0)
+  } catch {
+    return []
+  }
 }
 
 export function readSettings(): Settings {
-  const row = db().prepare('SELECT show_dauerwerbesendung FROM settings WHERE id = 1').get() as
-    | { show_dauerwerbesendung: number }
-    | undefined
+  const row = db()
+    .prepare(
+      'SELECT show_dauerwerbesendung, banner_enabled, banner_items, banner_interval, banner_duration, banner_position FROM settings WHERE id = 1'
+    )
+    .get() as SettingsRow | undefined
+
   return {
     showDauerwerbesendung: row ? row.show_dauerwerbesendung === 1 : false,
+    bannerEnabled: row?.banner_enabled !== 0,
+    bannerItems: parseBannerItems(row?.banner_items ?? null),
+    bannerInterval: row?.banner_interval ?? 30,
+    bannerDuration: row?.banner_duration ?? 8,
+    bannerPosition: (row?.banner_position as 'top' | 'middle' | 'bottom') ?? 'middle',
   }
 }
 
 export function updateSettings(patch: Partial<Settings>): Settings {
+  const sets: string[] = []
+  const values: unknown[] = []
+
   if (patch.showDauerwerbesendung !== undefined) {
+    sets.push('show_dauerwerbesendung = ?')
+    values.push(patch.showDauerwerbesendung ? 1 : 0)
+  }
+  if (patch.bannerEnabled !== undefined) {
+    sets.push('banner_enabled = ?')
+    values.push(patch.bannerEnabled ? 1 : 0)
+  }
+  if (patch.bannerItems !== undefined) {
+    const clean = patch.bannerItems.filter((i) => i.text.trim().length > 0)
+    sets.push('banner_items = ?')
+    values.push(JSON.stringify(clean))
+  }
+  if (patch.bannerInterval !== undefined) {
+    sets.push('banner_interval = ?')
+    values.push(Math.max(5, Number(patch.bannerInterval) || 30))
+  }
+  if (patch.bannerDuration !== undefined) {
+    sets.push('banner_duration = ?')
+    values.push(Math.max(2, Number(patch.bannerDuration) || 8))
+  }
+  if (patch.bannerPosition !== undefined) {
+    sets.push('banner_position = ?')
+    values.push(patch.bannerPosition)
+  }
+
+  if (sets.length > 0) {
     db()
-      .prepare('UPDATE settings SET show_dauerwerbesendung = ? WHERE id = 1')
-      .run(patch.showDauerwerbesendung ? 1 : 0)
+      .prepare(`UPDATE settings SET ${sets.join(', ')} WHERE id = 1`)
+      .run(...values)
   }
   return readSettings()
 }

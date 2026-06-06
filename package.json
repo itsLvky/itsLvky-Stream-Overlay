@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@streamerbot/client": "^1.12.2",
+    "@tsrx/react": "^0.2.20",
+    "@tsrx/turbopack-plugin-react": "^0.1.43",
     "better-sqlite3": "^12.9.0",
     "next": "16.2.6",
     "react": "19.2.4",

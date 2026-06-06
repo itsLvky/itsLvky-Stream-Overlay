@@ -13,6 +13,15 @@ export async function POST(req: NextRequest) {
     ...(body.showDauerwerbesendung !== undefined && {
       showDauerwerbesendung: Boolean(body.showDauerwerbesendung),
     }),
+    ...(body.bannerEnabled !== undefined && { bannerEnabled: Boolean(body.bannerEnabled) }),
+    ...(Array.isArray(body.bannerItems) && {
+      bannerItems: body.bannerItems as import('@/lib/server-state').BannerItem[],
+    }),
+    ...(body.bannerPosition !== undefined && {
+      bannerPosition: body.bannerPosition as 'top' | 'middle' | 'bottom',
+    }),
+    ...(body.bannerInterval !== undefined && { bannerInterval: Number(body.bannerInterval) }),
+    ...(body.bannerDuration !== undefined && { bannerDuration: Number(body.bannerDuration) }),
   })
   return NextResponse.json(updated)
 }

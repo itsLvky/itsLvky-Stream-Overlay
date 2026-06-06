@@ -1,8 +1,10 @@
-import type { NextConfig } from 'next'
+import tsrxReactTurbopack from '@tsrx/turbopack-plugin-react'
 
-const nextConfig: NextConfig = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default tsrxReactTurbopack({
   // Standalone output: required for the Docker image (smaller, self-contained)
   output: 'standalone',
+  reactStrictMode: true,
   images: {
     remotePatterns: [
       // Twitch CDN für Emotes und Badges
@@ -13,6 +15,4 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'cdn.frankerfacez.com' },
     ],
   },
-}
-
-export default nextConfig
+} as any)
