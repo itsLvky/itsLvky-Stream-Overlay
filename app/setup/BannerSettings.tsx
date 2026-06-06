@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useCallback } from 'react'
 import type { BannerItem, BannerConfig } from './banner-types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ const PLATFORM_OPTIONS = [
   { value: 'tiktok', label: 'TikTok' },
   { value: 'youtube', label: 'YouTube' },
   { value: 'kick', label: 'Kick' },
+  { value: '_bi', label: 'Bootstrap Icon (bi-…)' },
   { value: '_emoji', label: 'Emoji / Text…' },
 ]
 
@@ -198,6 +199,13 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
 
 // ── Item editor ───────────────────────────────────────────────────────────────
 
+function deriveMode(icon: string): string {
+  if (!icon) return ''
+  if (KNOWN_PLATFORMS.includes(icon.toLowerCase())) return icon.toLowerCase()
+  if (icon.startsWith('bi-')) return '_bi'
+  return '_emoji'
+}
+
 function ItemEditor({
   item,
   onUpdate,
@@ -207,11 +215,18 @@ function ItemEditor({
   onUpdate: (patch: Partial<BannerItem>) => void
   onRemove: () => void
 }) {
-  const iconSelect = KNOWN_PLATFORMS.includes(item.icon.toLowerCase())
-    ? item.icon.toLowerCase()
-    : item.icon
-      ? '_emoji'
-      : ''
+  // Separate state for the dropdown so selecting _bi/_emoji doesn't collapse the extra field
+  const [iconMode, setIconMode] = useState(() => deriveMode(item.icon))
+
+  const handleModeChange = useCallback(
+    (v: string) => {
+      setIconMode(v)
+      // Clear icon when switching to a mode that needs manual input, set directly for known platforms
+      if (v === '_bi' || v === '_emoji' || v === '') onUpdate({ icon: '' })
+      else onUpdate({ icon: v })
+    },
+    [onUpdate]
+  )
 
   return (
     <div
@@ -244,11 +259,8 @@ function ItemEditor({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
           <span style={S.label}>Icon</span>
           <select
-            value={iconSelect}
-            onChange={(e) => {
-              const v = e.target.value
-              onUpdate({ icon: v === '_emoji' ? '' : v })
-            }}
+            value={iconMode}
+            onChange={(e) => handleModeChange(e.target.value)}
             style={S.fieldSelect}
           >
             {PLATFORM_OPTIONS.map((opt) => (
@@ -259,7 +271,7 @@ function ItemEditor({
           </select>
         </div>
 
-        {iconSelect === '_emoji' && (
+        {iconMode === '_emoji' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 0 64px' }}>
             <span style={S.label}>Emoji</span>
             <input
@@ -294,6 +306,70 @@ function ItemEditor({
           </button>
         </div>
       </div>
+
+      {iconMode === '_bi' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={S.label}>Bootstrap Icon-Name</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <span
+                style={{
+                  position: 'absolute',
+                  left: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  fontSize: '0.75rem',
+                  color: '#555',
+                  pointerEvents: 'none',
+                  fontFamily: 'monospace',
+                }}
+              >
+                bi-
+              </span>
+              <input
+                type="text"
+                value={item.icon.startsWith('bi-') ? item.icon.slice(3) : item.icon}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/^bi-/, '')
+                  onUpdate({ icon: v ? `bi-${v}` : '' })
+                }}
+                placeholder="heart, star-fill, camera-video…"
+                style={{ ...S.fieldInput, paddingLeft: 30 }}
+                autoFocus
+              />
+            </div>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                flexShrink: 0,
+                borderRadius: 8,
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <i
+                className={`bi ${item.icon || 'bi-question'}`}
+                style={{ fontSize: '1rem', color: item.icon ? '#ccc' : '#444' }}
+              />
+            </div>
+          </div>
+          <span style={{ fontSize: '0.7rem', color: '#444' }}>
+            Alle Icons:{' '}
+            <a
+              href="https://icons.getbootstrap.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#6a6aff', textDecoration: 'none' }}
+            >
+              icons.getbootstrap.com
+            </a>
+          </span>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={S.label}>Hintergrundfarbe</span>
