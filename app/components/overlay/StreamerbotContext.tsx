@@ -48,6 +48,20 @@ interface StreamerbotState {
   lastRedemption: LastRedemptionEvent | null
 }
 
+export type StreamerbotInitialState = Partial<
+  Pick<
+    StreamerbotState,
+    | 'viewerCount'
+    | 'streamStartedAt'
+    | 'gameName'
+    | 'lastFollower'
+    | 'lastSubscriber'
+    | 'lastBits'
+    | 'lastDonation'
+    | 'lastRedemption'
+  >
+>
+
 const StreamerbotContext = createContext<StreamerbotState>({
   connected: false,
   messages: [],
@@ -66,6 +80,16 @@ export function useStreamerbot() {
   return useContext(StreamerbotContext)
 }
 
+// keepalive: true ensures the request is not cancelled when the page unloads (OBS scene switch)
+function persistState(patch: Record<string, unknown>) {
+  fetch('/api/stream-state', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
+    body: JSON.stringify(patch),
+  }).catch(() => {})
+}
+
 const WS_HOST = process.env.NEXT_PUBLIC_STREAMERBOT_HOST ?? '127.0.0.1'
 const WS_PORT = Number(process.env.NEXT_PUBLIC_STREAMERBOT_PORT ?? 8080)
 const CHANNEL_NAME = process.env.NEXT_PUBLIC_CHANNEL_NAME ?? ''
@@ -77,38 +101,38 @@ const ROLE_VIP = 2
 const ROLE_MODERATOR = 3
 const ROLE_BROADCASTER = 4
 
-export function StreamerbotProvider({ children }: { children: ReactNode }) {
+export function StreamerbotProvider({
+  children,
+  initialState,
+}: {
+  children: ReactNode
+  initialState?: StreamerbotInitialState
+}) {
   const [connected, setConnected] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [broadcasterName, setBroadcasterName] = useState<string | null>(null)
-  const [viewerCount, setViewerCount] = useState<number | null>(null)
-  const [streamStartedAt, setStreamStartedAt] = useState<string | null>(null)
-  const [gameName, setGameName] = useState<string | null>(null)
-  const [lastFollower, setLastFollower] = useState<string | null>(null)
-  const [lastSubscriber, setLastSubscriber] = useState<string | null>(null)
-  const [lastBits, setLastBits] = useState<LastBitsEvent | null>(null)
-  const [lastDonation, setLastDonation] = useState<LastDonationEvent | null>(null)
-  const [lastRedemption, setLastRedemption] = useState<LastRedemptionEvent | null>(null)
+  const [viewerCount, setViewerCount] = useState<number | null>(initialState?.viewerCount ?? null)
+  const [streamStartedAt, setStreamStartedAt] = useState<string | null>(
+    initialState?.streamStartedAt ?? null
+  )
+  const [gameName, setGameName] = useState<string | null>(initialState?.gameName ?? null)
+  const [lastFollower, setLastFollower] = useState<string | null>(
+    initialState?.lastFollower ?? null
+  )
+  const [lastSubscriber, setLastSubscriber] = useState<string | null>(
+    initialState?.lastSubscriber ?? null
+  )
+  const [lastBits, setLastBits] = useState<LastBitsEvent | null>(initialState?.lastBits ?? null)
+  const [lastDonation, setLastDonation] = useState<LastDonationEvent | null>(
+    initialState?.lastDonation ?? null
+  )
+  const [lastRedemption, setLastRedemption] = useState<LastRedemptionEvent | null>(
+    initialState?.lastRedemption ?? null
+  )
 
   useEffect(() => {
     let destroyed = false
     const holder: { client: StreamerbotClient | null } = { client: null }
-
-    // Load persisted state immediately on mount — no Streamerbot connection needed
-    fetch('/api/stream-state')
-      .then((r) => r.json())
-      .then((state) => {
-        if (destroyed) return
-        if (state.streamStartedAt) setStreamStartedAt(state.streamStartedAt)
-        if (state.viewerCount != null) setViewerCount(state.viewerCount)
-        if (state.gameName) setGameName(state.gameName)
-        if (state.lastFollower) setLastFollower(state.lastFollower)
-        if (state.lastSubscriber) setLastSubscriber(state.lastSubscriber)
-        if (state.lastBits) setLastBits(state.lastBits)
-        if (state.lastDonation) setLastDonation(state.lastDonation)
-        if (state.lastRedemption) setLastRedemption(state.lastRedemption)
-      })
-      .catch(() => {})
 
     async function setup() {
       const client = new StreamerbotClient({
@@ -206,11 +230,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         const v = data.data?.viewers
         if (typeof v === 'number') {
           setViewerCount(v)
-          fetch('/api/stream-state', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ viewerCount: v }),
-          }).catch(() => {})
+          persistState({ viewerCount: v })
         }
       })
 
@@ -220,11 +240,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         const name = data.data?.game?.name
         if (name) {
           setGameName(name)
-          fetch('/api/stream-state', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ gameName: name }),
-          }).catch(() => {})
+          persistState({ gameName: name })
         }
       })
 
@@ -235,11 +251,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         if (startedAt) {
           const s = String(startedAt)
           setStreamStartedAt(s)
-          fetch('/api/stream-state', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ streamStartedAt: s }),
-          }).catch(() => {})
+          persistState({ streamStartedAt: s })
         }
       })
 
@@ -247,11 +259,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         if (destroyed) return
         setStreamStartedAt(null)
         setViewerCount(null)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ streamStartedAt: null, viewerCount: null }),
-        }).catch(() => {})
+        persistState({ streamStartedAt: null, viewerCount: null })
       })
 
       // ── Optional: uptime override from a StreamerBot timer action ────────
@@ -270,11 +278,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         const username = data.data.user_name || data.data.user_login
         if (!username) return
         setLastFollower(username)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lastFollower: username }),
-        }).catch(() => {})
+        persistState({ lastFollower: username })
       })
 
       // ── New sub / resub / gift sub ───────────────────────────────────────
@@ -283,11 +287,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         const username = data.data.displayName || data.data.userName
         if (!username) return
         setLastSubscriber(username)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lastSubscriber: username }),
-        }).catch(() => {})
+        persistState({ lastSubscriber: username })
       })
 
       await client.on('Twitch.ReSub', (data) => {
@@ -295,11 +295,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         const username = data.data.displayName || data.data.userName
         if (!username) return
         setLastSubscriber(username)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lastSubscriber: username }),
-        }).catch(() => {})
+        persistState({ lastSubscriber: username })
       })
 
       await client.on('Twitch.GiftSub', (data) => {
@@ -307,11 +303,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         const username = data.data.displayName || data.data.userName
         if (!username) return
         setLastSubscriber(username)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lastSubscriber: username }),
-        }).catch(() => {})
+        persistState({ lastSubscriber: username })
       })
 
       // ── Bits / Cheer ─────────────────────────────────────────────────────
@@ -324,11 +316,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         if (!username || !amount) return
         const event: LastBitsEvent = { username, amount }
         setLastBits(event)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lastBits: event }),
-        }).catch(() => {})
+        persistState({ lastBits: event })
       })
 
       // ── Ko-fi donation (via StreamerBot Ko-fi integration) ───────────────
@@ -341,11 +329,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         if (!username || !amount) return
         const event: LastDonationEvent = { username, amount: String(amount), currency }
         setLastDonation(event)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lastDonation: event }),
-        }).catch(() => {})
+        persistState({ lastDonation: event })
       })
 
       // ── Channel Points Redemption ────────────────────────────────────────
@@ -357,11 +341,7 @@ export function StreamerbotProvider({ children }: { children: ReactNode }) {
         if (!username || !title) return
         const event: LastRedemptionEvent = { username, title }
         setLastRedemption(event)
-        fetch('/api/stream-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lastRedemption: event }),
-        }).catch(() => {})
+        persistState({ lastRedemption: event })
       })
 
       await client.connect()
