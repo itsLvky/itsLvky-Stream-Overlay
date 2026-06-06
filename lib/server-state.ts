@@ -22,6 +22,7 @@ const COLUMN_MIGRATIONS = [
   `ALTER TABLE settings ADD COLUMN banner_interval INTEGER NOT NULL DEFAULT 30`,
   `ALTER TABLE settings ADD COLUMN banner_duration INTEGER NOT NULL DEFAULT 8`,
   `ALTER TABLE settings ADD COLUMN banner_position TEXT NOT NULL DEFAULT 'middle'`,
+  `ALTER TABLE auth ADD COLUMN channel_id TEXT NOT NULL DEFAULT ''`,
 ]
 
 function applyColumnMigrations(conn: Database.Database) {
@@ -140,14 +141,23 @@ export interface AuthData {
   accessToken: string
   refreshToken: string
   channelLogin: string
+  channelId: string
   expiresAt: number // unix ms
 }
 
 export function readAuth(): AuthData | null {
   const row = db()
-    .prepare('SELECT access_token, refresh_token, channel_login, expires_at FROM auth WHERE id = 1')
+    .prepare(
+      'SELECT access_token, refresh_token, channel_login, channel_id, expires_at FROM auth WHERE id = 1'
+    )
     .get() as
-    | { access_token: string; refresh_token: string; channel_login: string; expires_at: number }
+    | {
+        access_token: string
+        refresh_token: string
+        channel_login: string
+        channel_id: string
+        expires_at: number
+      }
     | undefined
 
   if (!row) return null
@@ -155,6 +165,7 @@ export function readAuth(): AuthData | null {
     accessToken: row.access_token,
     refreshToken: row.refresh_token,
     channelLogin: row.channel_login,
+    channelId: row.channel_id ?? '',
     expiresAt: row.expires_at,
   }
 }
@@ -162,15 +173,16 @@ export function readAuth(): AuthData | null {
 export function writeAuth(data: AuthData): void {
   db()
     .prepare(
-      `INSERT INTO auth (id, access_token, refresh_token, channel_login, expires_at)
-       VALUES (1, ?, ?, ?, ?)
+      `INSERT INTO auth (id, access_token, refresh_token, channel_login, channel_id, expires_at)
+       VALUES (1, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET
          access_token  = excluded.access_token,
          refresh_token = excluded.refresh_token,
          channel_login = excluded.channel_login,
+         channel_id    = excluded.channel_id,
          expires_at    = excluded.expires_at`
     )
-    .run(data.accessToken, data.refreshToken, data.channelLogin, data.expiresAt)
+    .run(data.accessToken, data.refreshToken, data.channelLogin, data.channelId, data.expiresAt)
 }
 
 export function clearAuth(): void {

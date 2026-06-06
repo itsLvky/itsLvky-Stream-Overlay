@@ -130,6 +130,129 @@ export function StreamerbotProvider({
     initialState?.lastRedemption ?? null
   )
 
+  // ── Twitch EventSub WebSocket ──────────────────────────────────────────────
+  useEffect(() => {
+    let destroyed = false
+    let ws: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let keepaliveTimer: ReturnType<typeof setTimeout> | null = null
+    const KEEPALIVE_TIMEOUT_MS = 15_000 // Twitch sends keepalive every ~10s, 15s is safe
+
+    function clearKeepalive() {
+      if (keepaliveTimer) {
+        clearTimeout(keepaliveTimer)
+        keepaliveTimer = null
+      }
+    }
+
+    function resetKeepalive(reconnect: () => void) {
+      clearKeepalive()
+      keepaliveTimer = setTimeout(() => {
+        if (!destroyed) reconnect()
+      }, KEEPALIVE_TIMEOUT_MS)
+    }
+
+    function connect(url = 'wss://eventsub.wss.twitch.tv/ws') {
+      if (destroyed) return
+      ws = new WebSocket(url)
+
+      ws.onmessage = async (evt) => {
+        if (destroyed) return
+        let msg: any
+        try {
+          msg = JSON.parse(evt.data as string)
+        } catch {
+          return
+        }
+        const type: string = msg?.metadata?.message_type ?? ''
+
+        // Reset keepalive on any message
+        resetKeepalive(() => {
+          ws?.close()
+          connect()
+        })
+
+        if (type === 'session_welcome') {
+          const sessionId: string = msg.payload?.session?.id ?? ''
+          if (!sessionId) return
+          // Register all EventSub subscriptions server-side
+          await fetch('/api/twitch/eventsub', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+          }).catch(() => {})
+        } else if (type === 'session_reconnect') {
+          const newUrl: string = msg.payload?.session?.reconnect_url ?? ''
+          ws?.close()
+          if (newUrl) connect(newUrl)
+        } else if (type === 'notification') {
+          const subType: string = msg.metadata?.subscription_type ?? ''
+          const event = msg.payload?.event ?? {}
+
+          if (subType === 'channel.follow') {
+            const username: string = event.user_name || event.user_login || ''
+            if (!username) return
+            setLastFollower(username)
+            persistState({ lastFollower: username })
+          } else if (subType === 'channel.cheer') {
+            const username: string = event.is_anonymous
+              ? 'anonymous'
+              : event.user_name || event.user_login || ''
+            const amount: number = event.bits ?? 0
+            if (!username || !amount) return
+            const bitsEvent: LastBitsEvent = { username, amount }
+            setLastBits(bitsEvent)
+            persistState({ lastBits: bitsEvent })
+          } else if (
+            subType === 'channel.subscribe' ||
+            subType === 'channel.subscription.message'
+          ) {
+            const username: string = event.user_name || event.user_login || ''
+            if (!username) return
+            setLastSubscriber(username)
+            persistState({ lastSubscriber: username })
+          } else if (subType === 'channel.subscription.gift') {
+            // Gift sub: show the gifter (no individual recipient in this event)
+            const username: string = event.is_anonymous
+              ? 'anonymous'
+              : event.user_name || event.user_login || ''
+            if (!username) return
+            setLastSubscriber(username)
+            persistState({ lastSubscriber: username })
+          } else if (subType === 'channel.channel_points_custom_reward_redemption.add') {
+            const username: string = event.user_name || event.user_login || ''
+            const title: string = event.reward?.title ?? ''
+            if (!username || !title) return
+            const redemptionEvent: LastRedemptionEvent = { username, title }
+            setLastRedemption(redemptionEvent)
+            persistState({ lastRedemption: redemptionEvent })
+          }
+        }
+      }
+
+      ws.onclose = () => {
+        clearKeepalive()
+        if (!destroyed) {
+          reconnectTimer = setTimeout(() => connect(), 5_000)
+        }
+      }
+
+      ws.onerror = () => {
+        ws?.close()
+      }
+    }
+
+    connect()
+
+    return () => {
+      destroyed = true
+      clearKeepalive()
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      ws?.close()
+    }
+  }, [])
+
+  // ── StreamerBot WebSocket (chat messages + stream metadata) ───────────────
   useEffect(() => {
     let destroyed = false
     const holder: { client: StreamerbotClient | null } = { client: null }
@@ -272,53 +395,6 @@ export function StreamerbotProvider({
         }
       })
 
-      // ── New follower ─────────────────────────────────────────────────────
-      await client.on('Twitch.Follow', (data) => {
-        if (destroyed) return
-        const username = data.data.user_name || data.data.user_login
-        if (!username) return
-        setLastFollower(username)
-        persistState({ lastFollower: username })
-      })
-
-      // ── New sub / resub / gift sub ───────────────────────────────────────
-      await client.on('Twitch.Sub', (data) => {
-        if (destroyed) return
-        const username = data.data.displayName || data.data.userName
-        if (!username) return
-        setLastSubscriber(username)
-        persistState({ lastSubscriber: username })
-      })
-
-      await client.on('Twitch.ReSub', (data) => {
-        if (destroyed) return
-        const username = data.data.displayName || data.data.userName
-        if (!username) return
-        setLastSubscriber(username)
-        persistState({ lastSubscriber: username })
-      })
-
-      await client.on('Twitch.GiftSub', (data) => {
-        if (destroyed) return
-        const username = data.data.displayName || data.data.userName
-        if (!username) return
-        setLastSubscriber(username)
-        persistState({ lastSubscriber: username })
-      })
-
-      // ── Bits / Cheer ─────────────────────────────────────────────────────
-      await client.on('Twitch.Cheer', (data) => {
-        if (destroyed) return
-        const username = data.data.isAnonymous
-          ? 'anonymous'
-          : data.data.displayName || data.data.username
-        const amount = data.data.bits
-        if (!username || !amount) return
-        const event: LastBitsEvent = { username, amount }
-        setLastBits(event)
-        persistState({ lastBits: event })
-      })
-
       // ── Ko-fi donation (via StreamerBot Ko-fi integration) ───────────────
       await client.on('Kofi.Donation', (data: any) => {
         if (destroyed) return
@@ -330,18 +406,6 @@ export function StreamerbotProvider({
         const event: LastDonationEvent = { username, amount: String(amount), currency }
         setLastDonation(event)
         persistState({ lastDonation: event })
-      })
-
-      // ── Channel Points Redemption ────────────────────────────────────────
-      await client.on('Twitch.RewardRedemption', (data) => {
-        if (destroyed) return
-        const d = data.data
-        const username = d.user_name || d.user_login
-        const title = d.reward.title
-        if (!username || !title) return
-        const event: LastRedemptionEvent = { username, title }
-        setLastRedemption(event)
-        persistState({ lastRedemption: event })
       })
 
       await client.connect()

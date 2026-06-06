@@ -13,7 +13,12 @@ export async function GET() {
     client_id: clientId,
     redirect_uri: REDIRECT_URI,
     response_type: 'code',
-    scope: '',
+    scope: [
+      'bits:read',
+      'moderator:read:followers',
+      'channel:read:subscriptions',
+      'channel:read:redemptions',
+    ].join(' '),
   })
 
   return NextResponse.redirect(`https://id.twitch.tv/oauth2/authorize?${params}`)

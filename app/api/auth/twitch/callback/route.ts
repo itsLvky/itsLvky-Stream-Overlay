@@ -42,13 +42,16 @@ export async function GET(request: NextRequest) {
   const userRes = await fetch('https://api.twitch.tv/helix/users', {
     headers: { 'Client-ID': clientId, Authorization: `Bearer ${access_token}` },
   })
-  const login: string = userRes.ok ? ((await userRes.json()).data?.[0]?.login ?? '') : ''
+  const userData = userRes.ok ? ((await userRes.json()).data?.[0] ?? null) : null
+  const login: string = userData?.login ?? ''
+  const userId: string = userData?.id ?? ''
 
   // Persist tokens to disk — survives server restarts, works from any browser
   writeAuth({
     accessToken: access_token,
     refreshToken: refresh_token ?? '',
     channelLogin: process.env.TWITCH_CHANNEL_LOGIN ?? login,
+    channelId: userId,
     expiresAt: Date.now() + (expires_in ?? 14400) * 1000,
   })
 
