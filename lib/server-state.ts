@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
+import { publishStreamState } from './event-bus'
 
 const DATA_DIR = path.join(process.cwd(), 'data')
 const DB_FILE = path.join(DATA_DIR, 'overlay.db')
@@ -335,7 +336,11 @@ export function updateStreamState(patch: Partial<StreamState>): StreamState {
       .run(...values)
   }
 
-  return getStreamState()
+  // Jeder Write geht an alle offenen Overlays — sonst zeigt eine Browser-Source
+  // bis zum naechsten Reload den Stand vom Seitenaufruf.
+  const state = getStreamState()
+  publishStreamState(state)
+  return state
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

@@ -2,7 +2,12 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { StreamerbotClient } from '@streamerbot/client'
-import type { LastBitsEvent, LastDonationEvent, LastRedemptionEvent } from '@/lib/server-state'
+import type {
+  LastBitsEvent,
+  LastDonationEvent,
+  LastRedemptionEvent,
+  StreamState,
+} from '@/lib/server-state'
 
 // ── Shapes matching @streamerbot/client TwitchEmote / TwitchBadge ────────────
 export interface ChatEmote {
@@ -16,6 +21,32 @@ export interface ChatBadge {
   name: string // TwitchBadge uses .name, not .type
   version: string
   imageUrl: string
+}
+
+// ── Twitch.ChatMessage payload (EventSub-based, Streamer.bot 1.0.5+) ─────────
+// @streamerbot/client's bundled types still reflect the old IRC-based shape,
+// so we define the real runtime shape here and cast to it.
+interface EventSubChatMessage {
+  messageId: string
+  text: string
+  user: {
+    id: string
+    login: string
+    name: string
+    color: string
+    role: number
+    subscribed: boolean
+    badges: ChatBadge[]
+  } | null
+  emotes: ChatEmote[] | null
+}
+
+interface EventSubChatMessageDeleted {
+  messageId: string | null
+}
+
+interface EventSubUserModerationAction {
+  targetUser: { id: string } | null
 }
 
 export interface ChatMessage {
@@ -130,126 +161,34 @@ export function StreamerbotProvider({
     initialState?.lastRedemption ?? null
   )
 
-  // ── Twitch EventSub WebSocket ──────────────────────────────────────────────
+  // ── Server-State via SSE ────────────────────────────────────────
+  // Follower, Subs, Bits und Rewards kommen vom Server: der hält eine einzige
+  // Twitch-EventSub-Verbindung und pusht jede Änderung an alle Browser-Sources.
+  // Vorher öffnete jede Source ihre eigene EventSub-Verbindung — Twitch erlaubt
+  // aber nur 3 pro Client-ID, und jede Source sah nur ihre eigenen Events.
   useEffect(() => {
-    let destroyed = false
-    let ws: WebSocket | null = null
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-    let keepaliveTimer: ReturnType<typeof setTimeout> | null = null
-    const KEEPALIVE_TIMEOUT_MS = 15_000 // Twitch sends keepalive every ~10s, 15s is safe
+    const source = new EventSource('/api/stream-state/stream')
 
-    function clearKeepalive() {
-      if (keepaliveTimer) {
-        clearTimeout(keepaliveTimer)
-        keepaliveTimer = null
+    source.addEventListener('state', (event) => {
+      let state: StreamState
+      try {
+        state = JSON.parse((event as MessageEvent).data)
+      } catch {
+        return
       }
-    }
+      setViewerCount(state.viewerCount)
+      setStreamStartedAt(state.streamStartedAt)
+      setGameName(state.gameName)
+      setLastFollower(state.lastFollower)
+      setLastSubscriber(state.lastSubscriber)
+      setLastBits(state.lastBits)
+      setLastDonation(state.lastDonation)
+      setLastRedemption(state.lastRedemption)
+    })
 
-    function resetKeepalive(reconnect: () => void) {
-      clearKeepalive()
-      keepaliveTimer = setTimeout(() => {
-        if (!destroyed) reconnect()
-      }, KEEPALIVE_TIMEOUT_MS)
-    }
-
-    function connect(url = 'wss://eventsub.wss.twitch.tv/ws') {
-      if (destroyed) return
-      ws = new WebSocket(url)
-
-      ws.onmessage = async (evt) => {
-        if (destroyed) return
-        let msg: any
-        try {
-          msg = JSON.parse(evt.data as string)
-        } catch {
-          return
-        }
-        const type: string = msg?.metadata?.message_type ?? ''
-
-        // Reset keepalive on any message
-        resetKeepalive(() => {
-          ws?.close()
-          connect()
-        })
-
-        if (type === 'session_welcome') {
-          const sessionId: string = msg.payload?.session?.id ?? ''
-          if (!sessionId) return
-          // Register all EventSub subscriptions server-side
-          await fetch('/api/twitch/eventsub', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId }),
-          }).catch(() => {})
-        } else if (type === 'session_reconnect') {
-          const newUrl: string = msg.payload?.session?.reconnect_url ?? ''
-          ws?.close()
-          if (newUrl) connect(newUrl)
-        } else if (type === 'notification') {
-          const subType: string = msg.metadata?.subscription_type ?? ''
-          const event = msg.payload?.event ?? {}
-
-          if (subType === 'channel.follow') {
-            const username: string = event.user_name || event.user_login || ''
-            if (!username) return
-            setLastFollower(username)
-            persistState({ lastFollower: username })
-          } else if (subType === 'channel.cheer') {
-            const username: string = event.is_anonymous
-              ? 'anonymous'
-              : event.user_name || event.user_login || ''
-            const amount: number = event.bits ?? 0
-            if (!username || !amount) return
-            const bitsEvent: LastBitsEvent = { username, amount }
-            setLastBits(bitsEvent)
-            persistState({ lastBits: bitsEvent })
-          } else if (
-            subType === 'channel.subscribe' ||
-            subType === 'channel.subscription.message'
-          ) {
-            const username: string = event.user_name || event.user_login || ''
-            if (!username) return
-            setLastSubscriber(username)
-            persistState({ lastSubscriber: username })
-          } else if (subType === 'channel.subscription.gift') {
-            // Gift sub: show the gifter (no individual recipient in this event)
-            const username: string = event.is_anonymous
-              ? 'anonymous'
-              : event.user_name || event.user_login || ''
-            if (!username) return
-            setLastSubscriber(username)
-            persistState({ lastSubscriber: username })
-          } else if (subType === 'channel.channel_points_custom_reward_redemption.add') {
-            const username: string = event.user_name || event.user_login || ''
-            const title: string = event.reward?.title ?? ''
-            if (!username || !title) return
-            const redemptionEvent: LastRedemptionEvent = { username, title }
-            setLastRedemption(redemptionEvent)
-            persistState({ lastRedemption: redemptionEvent })
-          }
-        }
-      }
-
-      ws.onclose = () => {
-        clearKeepalive()
-        if (!destroyed) {
-          reconnectTimer = setTimeout(() => connect(), 5_000)
-        }
-      }
-
-      ws.onerror = () => {
-        ws?.close()
-      }
-    }
-
-    connect()
-
-    return () => {
-      destroyed = true
-      clearKeepalive()
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      ws?.close()
-    }
+    // EventSource verbindet bei Fehlern selbständig neu — wichtig für OBS,
+    // wenn der Dev-Server zwischendurch neu startet.
+    return () => source.close()
   }, [])
 
   // ── StreamerBot WebSocket (chat messages + stream metadata) ───────────────
@@ -299,29 +238,33 @@ export function StreamerbotProvider({
       if (destroyed) return
 
       // ── Chat messages ────────────────────────────────────────────────────
+      // Streamer.bot 1.0.5+ moved Twitch chat from IRC to EventSub, which replaced
+      // the old `data.data.message` shape with a flat payload + nested `user` object.
       await client.on('Twitch.ChatMessage', (data) => {
         if (destroyed) return
-        const msg = data.data.message
+        const msg = data.data as unknown as EventSubChatMessage
+        const user = msg.user
+        if (!user) return
         setMessages((prev) => [
           ...prev.slice(-(MAX_MESSAGES - 1)),
           {
-            id: msg.msgId || crypto.randomUUID(),
-            userId: msg.userId,
-            username: msg.username,
-            displayName: msg.displayName || msg.username,
-            color: msg.color || '#9146FF',
-            message: msg.message,
-            isSub: msg.subscriber,
-            isMod: msg.role === ROLE_MODERATOR,
-            isVip: msg.role === ROLE_VIP,
-            isBroadcaster: msg.role === ROLE_BROADCASTER,
-            emotes: msg.emotes.map((e) => ({
+            id: msg.messageId || crypto.randomUUID(),
+            userId: user.id,
+            username: user.login,
+            displayName: user.name || user.login,
+            color: user.color || '#9146FF',
+            message: msg.text,
+            isSub: !!user.subscribed,
+            isMod: user.role === ROLE_MODERATOR,
+            isVip: user.role === ROLE_VIP,
+            isBroadcaster: user.role === ROLE_BROADCASTER,
+            emotes: (msg.emotes ?? []).map((e) => ({
               name: e.name,
               startIndex: e.startIndex,
               endIndex: e.endIndex,
               imageUrl: e.imageUrl,
             })),
-            badges: msg.badges.map((b) => ({
+            badges: (user.badges ?? []).map((b) => ({
               name: b.name,
               version: b.version,
               imageUrl: b.imageUrl,
@@ -334,17 +277,20 @@ export function StreamerbotProvider({
       // ── Moderation ───────────────────────────────────────────────────────
       await client.on('Twitch.ChatMessageDeleted', (data) => {
         if (destroyed) return
-        setMessages((prev) => prev.filter((m) => m.id !== data.data.targetMessageId))
+        const { messageId } = data.data as unknown as EventSubChatMessageDeleted
+        setMessages((prev) => prev.filter((m) => m.id !== messageId))
       })
 
       await client.on('Twitch.UserTimedOut', (data) => {
         if (destroyed) return
-        setMessages((prev) => prev.filter((m) => m.userId !== data.data.target_user_id))
+        const { targetUser } = data.data as unknown as EventSubUserModerationAction
+        setMessages((prev) => prev.filter((m) => m.userId !== targetUser?.id))
       })
 
       await client.on('Twitch.UserBanned', (data) => {
         if (destroyed) return
-        setMessages((prev) => prev.filter((m) => m.userId !== data.data.target_user_id))
+        const { targetUser } = data.data as unknown as EventSubUserModerationAction
+        setMessages((prev) => prev.filter((m) => m.userId !== targetUser?.id))
       })
 
       // ── Live viewer count ────────────────────────────────────────────────

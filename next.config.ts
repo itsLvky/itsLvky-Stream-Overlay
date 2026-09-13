@@ -5,6 +5,12 @@ export default tsrxReactTurbopack({
   // Standalone output: required for the Docker image (smaller, self-contained)
   output: 'standalone',
   reactStrictMode: true,
+  // Ein zweites package-lock.json im übergeordneten Ordner ließ Turbopack den
+  // falschen Workspace-Root erkennen (siehe Warnung "multiple lockfiles") —
+  // dadurch wurde u.a. der viel größere Elternordner mitüberwacht.
+  turbopack: {
+    root: __dirname,
+  },
   images: {
     remotePatterns: [
       // Twitch CDN für Emotes und Badges

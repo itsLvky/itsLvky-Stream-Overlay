@@ -1,25 +1,8 @@
 import { NextResponse } from 'next/server'
-import { readAuth, writeAuth, updateStreamState } from '@/lib/server-state'
+import { updateStreamState } from '@/lib/server-state'
+import { getValidAuth, forceRefreshAuth, readCredentials } from '@/lib/twitch-auth'
 
 export const dynamic = 'force-dynamic'
-
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-const REDIRECT_URI = `${APP_URL}/api/auth/twitch/callback`
-
-async function doRefresh(clientId: string, clientSecret: string, refreshToken: string) {
-  const res = await fetch('https://id.twitch.tv/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
-  })
-  if (!res.ok) return null
-  return res.json() as Promise<{ access_token: string; refresh_token: string; expires_in: number }>
-}
 
 async function fetchStream(clientId: string, token: string, login: string) {
   return fetch(`https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`, {
@@ -29,33 +12,24 @@ async function fetchStream(clientId: string, token: string, login: string) {
 }
 
 export async function GET() {
-  const clientId = process.env.TWITCH_CLIENT_ID
-  const clientSecret = process.env.TWITCH_CLIENT_SECRET
-  if (!clientId || !clientSecret) {
+  const credentials = readCredentials()
+  if (!credentials) {
     return NextResponse.json({ error: 'Credentials fehlen in .env.local' }, { status: 500 })
   }
 
-  const auth = readAuth()
+  // Gemeinsamer Refresh-Pfad mit dem EventSub-Listener: Twitch rotiert den
+  // Refresh-Token, zwei parallele Refreshes würden sich gegenseitig entwerten.
+  const auth = await getValidAuth()
   if (!auth?.accessToken) {
     return NextResponse.json({ error: 'Nicht authentifiziert — /setup öffnen' }, { status: 401 })
   }
 
-  let { accessToken, refreshToken, channelLogin } = auth
-  let res = await fetchStream(clientId, accessToken, channelLogin)
+  let res = await fetchStream(credentials.clientId, auth.accessToken, auth.channelLogin)
 
-  // Token abgelaufen → refresh
-  if (res.status === 401 && refreshToken) {
-    const refreshed = await doRefresh(clientId, clientSecret, refreshToken)
-    if (refreshed) {
-      accessToken = refreshed.access_token
-      refreshToken = refreshed.refresh_token
-      writeAuth({
-        ...auth,
-        accessToken,
-        refreshToken,
-        expiresAt: Date.now() + refreshed.expires_in * 1000,
-      })
-      res = await fetchStream(clientId, accessToken, channelLogin)
+  if (res.status === 401) {
+    const refreshed = await forceRefreshAuth()
+    if (refreshed?.accessToken) {
+      res = await fetchStream(credentials.clientId, refreshed.accessToken, refreshed.channelLogin)
     }
   }
 
@@ -76,7 +50,7 @@ export async function GET() {
     gameName: stream?.game_name ?? null,
   }
 
-  // Keep server-side stream state in sync
+  // Keep server-side stream state in sync (broadcastet an alle Overlays)
   updateStreamState({
     gameName: result.gameName,
     streamStartedAt: result.startedAt,

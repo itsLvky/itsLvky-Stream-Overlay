@@ -4,7 +4,14 @@ import { useEffect, useRef } from 'react'
 import { useStreamerbot } from './StreamerbotContext'
 import ChatMessageRow from './ChatMessage'
 
-export default function ChatPanel() {
+interface ChatPanelProps {
+  // 'side': fixed-width right column (default, used by 16:9 overlays)
+  // 'bottom': full-width strip with a fixed height (used by 9:16 portrait overlays)
+  variant?: 'side' | 'bottom'
+  height?: string
+}
+
+export default function ChatPanel({ variant = 'side', height = '38vh' }: ChatPanelProps) {
   const { messages, connected } = useStreamerbot()
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -18,13 +25,17 @@ export default function ChatPanel() {
     }
   }, [messages])
 
+  const isBottom = variant === 'bottom'
+
   return (
     <div
       className="flex shrink-0 flex-col overflow-hidden"
       style={{
-        width: '460px',
+        width: isBottom ? '100%' : '460px',
+        height: isBottom ? height : undefined,
         background: 'rgba(5, 5, 10, 0.88)',
-        borderLeft: '2px solid rgba(145, 70, 255, 0.40)',
+        borderLeft: isBottom ? undefined : '2px solid rgba(145, 70, 255, 0.40)',
+        borderTop: isBottom ? '2px solid rgba(145, 70, 255, 0.40)' : undefined,
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
       }}

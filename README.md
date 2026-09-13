@@ -111,6 +111,15 @@ Für jedes Overlay eine **Browser-Source** in OBS anlegen:
 | Höhe                      | `1080`                                        |
 | Transparentes Hintergrund | ✅                                            |
 
+### Just Chatting (Portrait / 9:16)
+
+| Einstellung               | Wert                                                   |
+| ------------------------- | ------------------------------------------------------ |
+| URL                       | `http://localhost:3000/overlay/just-chatting-portrait` |
+| Breite                    | `1080`                                                 |
+| Höhe                      | `1920`                                                 |
+| Transparentes Hintergrund | ✅                                                     |
+
 ### TopBar Only
 
 | Einstellung               | Wert                                        |
@@ -206,6 +215,33 @@ Token und Stream-State werden im Docker-Volume `overlay-data` gespeichert (`/app
 
 ---
 
+## 📡 Events (Follower, Subs, Bits, Rewards)
+
+Diese Events kommen **nicht** über Streamer.bot, sondern direkt über Twitch
+EventSub — und zwar serverseitig:
+
+```
+Twitch EventSub  →  Server (eine WebSocket-Verbindung)  →  SQLite
+                                                          ↓
+                                    SSE /api/stream-state/stream
+                                                          ↓
+                              alle offenen OBS-Browser-Sources
+```
+
+Twitch erlaubt pro Client-ID nur **3 EventSub-Verbindungen**. Würde jede
+Browser-Source ihre eigene öffnen, bekäme ab der vierten Source keine mehr
+Subscriptions — sie würde dauerhaft den Stand vom Seitenaufruf anzeigen.
+Deshalb hält der Server genau eine Verbindung und pusht an alle Overlays.
+
+**Diagnose:** `http://localhost:3000/api/twitch/eventsub` zeigt, ob die
+Verbindung steht, welche Subscriptions Twitch akzeptiert hat, wann das letzte
+Event kam und wie viele Overlays gerade hören. Fehler landen zusätzlich im
+Server-Log unter `[eventsub]`.
+
+Chat, Viewer-Count und Ko-fi laufen weiterhin über Streamer.bot.
+
+---
+
 ## 🗂️ Projektstruktur
 
 ```
@@ -215,16 +251,22 @@ stream-overlay/
 │   ├── components/overlay/     # Wiederverwendbare Overlay-Komponenten
 │   │   ├── StreamerbotContext  # WebSocket & globaler State (Context)
 │   │   ├── TopBar              # Waybar-style Statusleiste
+│   │   ├── PortraitTopBar      # Kompakte 2-Zeilen-Statusleiste für 9:16
 │   │   ├── ChatPanel           # Chat-Fenster mit Terminal-Header
 │   │   └── ChatMessage         # Shell-Prompt-formatierte Nachrichten
 │   ├── overlay/                # OBS Browser-Source Seiten
 │   │   ├── just-chatting/
+│   │   ├── just-chatting-portrait/
 │   │   ├── topbar-only/
 │   │   ├── stream-starting/
 │   │   └── afk/
 │   └── setup/                  # Twitch OAuth Setup-Seite
 ├── lib/
-│   └── server-state.ts         # Datei-basierte Persistenz (data/*.json)
+│   ├── server-state.ts         # SQLite-Persistenz (data/overlay.db)
+│   ├── twitch-eventsub.ts      # Eine EventSub-Verbindung für die ganze App
+│   ├── twitch-auth.ts          # Token-Refresh (geteilt von allen Routen)
+│   └── event-bus.ts            # Verteilt State-Änderungen an die SSE-Clients
+├── instrumentation.ts           # Startet EventSub mit dem Server
 ├── data/                       # Laufzeit-Daten (in .gitignore)
 │   ├── auth.json               # Twitch Tokens
 │   └── stream-state.json       # Letzter bekannter Stream-State
