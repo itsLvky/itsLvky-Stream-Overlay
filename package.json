@@ -17,7 +17,7 @@
     "better-sqlite3": "^12.9.0",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
-    "next": "16.2.6",
+    "next": "16.3.5",
     "react": "19.2.4",
     "react-bootstrap": "^2.10.10",
     "react-dom": "19.2.4"
